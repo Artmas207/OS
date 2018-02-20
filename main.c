@@ -145,23 +145,26 @@ struct horses {
 unsigned __stdcall horse_resting(void *args) {
     int *ip = (int *)args;
     int resting_horse = *ip;
-    Sleep(10000);
+    Sleep(1000);
     horse[resting_horse].tired = false;
 }
 
 void get_free_horse(int target_horseman) {
     while(true) {
-        for (int j = 0; j < NOC * DHPC; ++j)
+        for (int j = 0; j < NOC * DHPC; ++j) {
             if (map_of_horses[horseman[target_horseman].current_city][j] != -666) {
                 if (horse[j].tired == false) {
-                    if (horse[horseman[target_horseman].current_horse].is_free) {
+                    if (horse[j].is_free) {
+                        int c_horse = horseman[target_horseman].current_horse;
                         horse[horseman[target_horseman].current_horse].is_free = false;
                         horseman[target_horseman].current_horse = map_of_horses[horseman[target_horseman].current_city][j];
-                        horse[j].in_city = -666;
+                        map_of_horses[horseman[target_horseman].current_city][j] = -666;
                         return;
                     }
                 }
             }
+        }
+        Sleep(20);
     }
 }
 
@@ -287,69 +290,6 @@ void horses_initialize() {
     }
 }
 
-int info_pos = 0;
-
-unsigned __stdcall show_info(void *arg) {
-    WaitForSingleObject(mutex, INFINITE);
-    int *ip = (int *)arg;
-    int cur_horseman = *ip;
-
-    COORD str_pos;
-    HANDLE handle_out = GetStdHandle(STD_OUTPUT_HANDLE);
-
-
-
-
-    horseman[cur_horseman].pos = info_pos;
-    info_pos++;
-    str_pos.X = 30 * (horseman[cur_horseman].pos % 6);
-    str_pos.Y = 3 + 35 * (horseman[cur_horseman].pos / 6);
-    SetConsoleCursorPosition(handle_out, str_pos);
-    fflush(NULL);
-    printf("Horseman %s", horseman[cur_horseman].horseman_name);
-    fflush(NULL);
-    str_pos.Y++;
-    SetConsoleCursorPosition(handle_out, str_pos);
-    printf("from %d to %d", horseman[cur_horseman].departure_city, horseman[cur_horseman].destination_city);
-    fflush(NULL);
-
-    WaitForSingleObject(mutex, INFINITE);
-
-    while (true) {
-        Sleep(2000);
-
-        ReleaseMutex(mutex);
-
-        str_pos.Y++;
-        str_pos.X = 30 * (horseman[cur_horseman].pos % 6);
-        SetConsoleCursorPosition(handle_out, str_pos);
-        fflush(NULL);
-        if (horseman[cur_horseman].current_city == horseman[cur_horseman].destination_city) {
-            printf("Complete. City - %d", horseman[cur_horseman].current_city);
-
-            fflush(NULL);
-            //WaitForSingleObject(mutex, INFINITE);
-
-            return 0;
-        }
-        else {
-            if (horseman[cur_horseman].current_horse != NONE) {
-                printf("city: %d, horse: %d", horseman[cur_horseman].current_city,
-                       horseman[cur_horseman].current_horse);
-                fflush(NULL);
-            }
-            else if (horseman[cur_horseman].current_horse == NONE) {
-                printf("city: %d, horse: %s", horseman[cur_horseman].current_city, "waiting");
-                fflush(NULL);
-            }
-        }
-
-        ReleaseMutex(mutex);
-    }
-}
-
-
-
 void draw_road(int city1, int city2){
     COORD city_1_coord;
     COORD city_2_coord;
@@ -412,6 +352,29 @@ void draw_map(){
         city_coord.X += 50;
         SetConsoleCursorPosition(handle_output, city_coord);
         printf("%d", i);
+
+        city_coord.Y++;
+        SetConsoleCursorPosition(handle_output, city_coord);
+
+        int num = 0;
+        int non_tired= 0;
+        int free = 0;
+        for (int j = 0; j < NOC * DHPC; ++j) {
+            if(map_of_horses[i][j] != -666){
+                num++;
+                if(!horse[map_of_horses[i][j]].tired){
+                    non_tired++;
+                    if(horse[map_of_horses[i][j]].is_free){
+                        free++;
+                    }
+
+
+                }
+
+            }
+        }
+
+        printf("(%d, %d, % d)", num, non_tired, free);
     }
     for (int i = 0; i < NOC; ++i) {
         for (int j = 0; j < NOC; ++j) {
@@ -470,14 +433,6 @@ void create_horseman(int target_horseman) {
     //_beginthreadex(NULL, 0, show_info, &horseman[target_horseman].horseman_id, 0, NULL);
 }
 
-bool all_horse_man_is_free() {
-    for (int i = 0; i < NOH; ++i) {
-        if (!horseman[i].is_free) {
-            return false;
-        }
-    }
-    return true;
-}
 
 void horsemen_initialize() {
     for (int i = 0; i < NOH; ++i) {
@@ -486,7 +441,6 @@ void horsemen_initialize() {
     }
     int num = 0;
     while (true) {
-        if (num < 12) {
             for (int i = 0; i < NOH; i++) {
                 if (horseman[i].is_free == true) {
                     create_horseman(i);
@@ -495,14 +449,6 @@ void horsemen_initialize() {
             }
             num++;
             Sleep(1000);
-        }
-        else if (all_horse_man_is_free()) {
-            info_pos = 0;
-            num = 0;
-            Sleep(1000);
-            system("cls");
-            fflush(NULL);
-        }
     }
 }
 
