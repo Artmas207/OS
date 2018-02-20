@@ -26,6 +26,7 @@ struct cities {
     bool is_city;
     double x;
     double y;
+    HANDLE mutex;
 } city[NOC];
 
 double weight_matrix[NOC][NOC];
@@ -39,6 +40,7 @@ void cities_set_xy(int city_id, double x, double y) {
 void cities_initialize() {
     for (int i = 0; i < NOC; ++i) {
         city[i].city_id = i;
+        city[i].mutex = CreateMutex(NULL, FALSE, NULL);
     }
     cities_set_xy(0, 3, 0);
     cities_set_xy(1, 11, 0);
@@ -116,10 +118,14 @@ struct horsemen {
     int departure_city;
     int current_city;
     int current_horse;
+    int pos_x;
+    int pos_y;
     //pthread_t horseman_thread;
     char horseman_name[20];
     bool is_free;
     int pos;
+    HANDLE horseman_handle;
+
 } horseman[NOC];
 
 char first_names[10][10] = { "John ", "Richard ", "Corey ", "Mark ", "Adam ", "Jamie ", "Sean ", "Juffin ", "Max ",
@@ -130,7 +136,9 @@ struct horses {
     int horse_id;
     int in_city;
     bool tired;
+    bool is_free;
     //pthread_t horse_thread;
+    HANDLE horse_mutex;
 } horse[NOC * DHPC];
 
 
@@ -142,25 +150,73 @@ unsigned __stdcall horse_resting(void *args) {
 }
 
 void get_free_horse(int target_horseman) {
-    for (int j = 0; j < NOC * DHPC; ++j)
-        if (map_of_horses[horseman[target_horseman].current_city][j] != -666) {
-            if (horse[j].tired == false) {
-                horseman[target_horseman].current_horse = map_of_horses[horseman[target_horseman].current_city][j];
-                horse[j].in_city = USING;
-                return;
+    while(true) {
+        for (int j = 0; j < NOC * DHPC; ++j)
+            if (map_of_horses[horseman[target_horseman].current_city][j] != -666) {
+                if (horse[j].tired == false) {
+                    if (horse[horseman[target_horseman].current_horse].is_free) {
+                        horse[horseman[target_horseman].current_horse].is_free = false;
+                        horseman[target_horseman].current_horse = map_of_horses[horseman[target_horseman].current_city][j];
+                        horse[j].in_city = -666;
+                        return;
+                    }
+                }
             }
-        }
-        else get_free_horse(target_horseman);
+    }
 }
 
 void live_horse(int target_horseman, int target_city) {
     horse[horseman[target_horseman].current_horse].in_city = target_city;
     map_of_horses[horseman[target_horseman].current_city][horseman[target_horseman].current_horse] = horseman[target_horseman].current_horse;
+    horse[horseman[target_horseman].current_horse].is_free = true;
     horse[horseman[target_horseman].current_horse].tired = true;
     _beginthreadex(NULL, 0, horse_resting,
                    &horseman[target_horseman].current_horse, 0, NULL);
     horseman[target_horseman].current_horse = NONE;
 }
+
+#define K 2
+HANDLE handle_output;
+
+void way_between_cities(int city1, int city2, int target_horseman){
+    COORD city_1_coord;
+    COORD city_2_coord;
+    COORD point_coord;
+    city_1_coord.X = (short)(city[city1].x * K);
+    city_1_coord.Y = (short)(city[city1].y * K);
+    city_2_coord.X = (short)(city[city2].x * K);
+    city_2_coord.Y = (short)(city[city2].y * K);
+
+
+    double delta_x = abs(city_2_coord.X - city_1_coord.X);
+    double delta_y = abs(city_2_coord.Y - city_1_coord.Y);
+    double error = 0;
+    double delta_error = delta_y;
+    point_coord.Y = city_1_coord.Y;
+    int dir_y = city_2_coord.Y - city_1_coord.Y;
+    if(dir_y > 0){
+        dir_y = 1;
+    }
+    if(dir_y < 0){
+        dir_y = -1;
+    }
+
+    for(point_coord.X = (short)(city_1_coord.X + 1); point_coord.X < city_2_coord.X; point_coord.X++){
+        horseman[target_horseman].pos_x = point_coord.X;
+        horseman[target_horseman].pos_y = point_coord.Y;
+        error = error + delta_error;
+
+        if(2 * error >= delta_x){
+            point_coord.Y = (short)(point_coord.Y + dir_y);
+            error = error - delta_x;
+
+
+        }
+        Sleep(1000);
+    }
+    ReleaseMutex(horseman[target_horseman].horseman_handle);
+}
+
 
 unsigned __stdcall horseman_way(void *arg) {
     int *ip = (int *)arg;
@@ -177,10 +233,12 @@ unsigned __stdcall horseman_way(void *arg) {
     ReleaseMutex(mutex);
     // в пути
     while (true) {
-        Sleep(2000);
         // попадает в следующий город
+        int last_city = horseman[target_horseman].current_city;
         horseman[target_horseman].current_city = (int)history_matrix[horseman[target_horseman].current_city]
         [horseman[target_horseman].destination_city];
+        way_between_cities(last_city, horseman[target_horseman].current_city,  horseman[target_horseman].horseman_id);
+        WaitForSingleObject(horseman[target_horseman].horseman_handle, INFINITE);
         // если это его конечный пункт
         if (horseman[target_horseman].current_city == horseman[target_horseman].destination_city) {
             // оставил усталую лошадь
@@ -211,10 +269,12 @@ void horses_initialize() {
     for (int i = 0; i < NOC * DHPC; ++i) {
         horse[i].horse_id = i;
         horse[i].tired = false;
+        horse[i].is_free = true;
     }
     for (int m = 0; m < NOC; ++m) {
         for (int i = 0; i < NOC * DHPC; ++i) {
             map_of_horses[m][i] = -666;
+            horse[i].horse_mutex = CreateMutex(NULL, FALSE, NULL);
         }
     }
     int l = 0;
@@ -288,8 +348,7 @@ unsigned __stdcall show_info(void *arg) {
     }
 }
 
-HANDLE handle_output;
-#define K 5
+
 
 void draw_road(int city1, int city2){
     COORD city_1_coord;
@@ -315,8 +374,10 @@ void draw_road(int city1, int city2){
     }
 
     for(point_coord.X = (short)(city_1_coord.X + 1); point_coord.X < city_2_coord.X; point_coord.X++){
+        point_coord.X += 50;
         SetConsoleCursorPosition(handle_output, point_coord);
         printf(".");
+        point_coord.X -= 50;
         error = error + delta_error;
 
         if(2 * error >= delta_x){
@@ -327,6 +388,20 @@ void draw_road(int city1, int city2){
         }
     }
 }
+
+void draw_horsemen(){
+    COORD point_coord;
+    for (int i = 0; i < NOH; ++i) {
+        if(!horseman[i].is_free){
+            point_coord.X = (short)horseman[i].pos_x;
+            point_coord.Y = (short)horseman[i].pos_y;
+
+            point_coord.X += 50;
+            SetConsoleCursorPosition(handle_output, point_coord);
+            printf("H%d", horseman[i].horseman_id);
+        }
+    }
+}
 void draw_map(){
     handle_output = GetStdHandle(STD_OUTPUT_HANDLE);
     for (int i = 0; i < NOC; ++i) {
@@ -334,6 +409,7 @@ void draw_map(){
         city_coord.X = (short)(city[i].x * K);
         city_coord.Y = (short)(city[i].y * K);
 
+        city_coord.X += 50;
         SetConsoleCursorPosition(handle_output, city_coord);
         printf("%d", i);
     }
@@ -346,8 +422,31 @@ void draw_map(){
     }
 }
 
-unsigned __stdcall drawing(void *arg){
+void draw_info(){
+    COORD info_coord;
+    info_coord.X = 0;
+    info_coord.Y = 0;
+    for (int i = 0; i < NOH; ++i) {
+        if(!horseman[i].is_free){
+            SetConsoleCursorPosition(handle_output, info_coord);
+            if(horseman[i].current_horse != NONE){
+                printf("%s (H%d): city - %d, horse - %d", horseman[i].horseman_name, horseman[i].horseman_id, horseman[i].current_city, horseman[i].current_horse);
+            }else{
+                printf("%s (H%d): city - %d, horse - %s", horseman[i].horseman_name, horseman[i].horseman_id, horseman[i].current_city, "waiting");
+            }
+            info_coord.Y++;
+        }
+    }
+}
 
+unsigned __stdcall drawing(void *arg){
+    while (true){
+        system("cls");
+        draw_map();
+        draw_horsemen();
+        draw_info();
+        Sleep(1000);
+    }
 }
 
 void create_horseman(int target_horseman) {
@@ -368,7 +467,7 @@ void create_horseman(int target_horseman) {
         horseman[target_horseman].destination_city = rand() % NOC;
     }
     _beginthreadex(NULL, 0, horseman_way, &horseman[target_horseman].horseman_id, 0, NULL);
-    _beginthreadex(NULL, 0, show_info, &horseman[target_horseman].horseman_id, 0, NULL);
+    //_beginthreadex(NULL, 0, show_info, &horseman[target_horseman].horseman_id, 0, NULL);
 }
 
 bool all_horse_man_is_free() {
@@ -383,6 +482,7 @@ bool all_horse_man_is_free() {
 void horsemen_initialize() {
     for (int i = 0; i < NOH; ++i) {
         horseman[i].is_free = true;
+        horseman[i].horseman_handle = CreateMutex(NULL, FALSE, NULL);
     }
     int num = 0;
     while (true) {
@@ -410,14 +510,18 @@ void horsemen_initialize() {
 int main() {
 
 
-
     cities_initialize();
     create_weight_matrix();
     create_history_matrix();
     calculate_history_matrix();
     horses_initialize();
-    //horsemen_initialize();
-    draw_map();
+
+    _beginthreadex(NULL, 0, drawing, NULL, 0, NULL);
+
+    horsemen_initialize();
+    //draw_map();
+
+
     getchar();
 
 }
