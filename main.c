@@ -146,7 +146,9 @@ unsigned __stdcall horse_resting(void *args) {
     int *ip = (int *)args;
     int resting_horse = *ip;
     Sleep(1000);
+    WaitForSingleObject(horse[resting_horse].horse_mutex, INFINITE);
     horse[resting_horse].tired = false;
+    ReleaseMutex(horse[resting_horse].horse_mutex);
 }
 
 void get_free_horse(int target_horseman) {
@@ -155,11 +157,18 @@ void get_free_horse(int target_horseman) {
             if (map_of_horses[horseman[target_horseman].current_city][j] != -666) {
                 if (horse[j].tired == false) {
                     if (horse[j].is_free) {
-                        int c_horse = horseman[target_horseman].current_horse;
+
                         horse[horseman[target_horseman].current_horse].is_free = false;
                         horseman[target_horseman].current_horse = map_of_horses[horseman[target_horseman].current_city][j];
                         map_of_horses[horseman[target_horseman].current_city][j] = -666;
-                        return;
+
+                        int c_horse = horseman[target_horseman].current_horse;
+                        bool b = horse[c_horse].is_free;
+
+                        if(c_horse != NONE){
+                            return;
+                        }
+
                     }
                 }
             }
@@ -229,11 +238,9 @@ unsigned __stdcall horseman_way(void *arg) {
 
     horseman[target_horseman].current_city = horseman[target_horseman].departure_city;
 
-    WaitForSingleObject(mutex, INFINITE);
 
     get_free_horse(horseman[target_horseman].horseman_id);
 
-    ReleaseMutex(mutex);
     // в пути
     while (true) {
         // попадает в следующий город
@@ -241,15 +248,12 @@ unsigned __stdcall horseman_way(void *arg) {
         horseman[target_horseman].current_city = (int)history_matrix[horseman[target_horseman].current_city]
         [horseman[target_horseman].destination_city];
         way_between_cities(last_city, horseman[target_horseman].current_city,  horseman[target_horseman].horseman_id);
-        WaitForSingleObject(horseman[target_horseman].horseman_handle, INFINITE);
         // если это его конечный пункт
         if (horseman[target_horseman].current_city == horseman[target_horseman].destination_city) {
             // оставил усталую лошадь
-            WaitForSingleObject(mutex, INFINITE);
 
             live_horse(target_horseman, horseman[target_horseman].current_city);
 
-            ReleaseMutex(mutex);
 
             horseman[target_horseman].is_free = true;
             return 0;
@@ -257,12 +261,10 @@ unsigned __stdcall horseman_way(void *arg) {
         }
         else if (horseman[target_horseman].current_city != horseman[target_horseman].destination_city) {
             //оставил усталую лошадь
-            WaitForSingleObject(mutex, INFINITE);
 
             live_horse(target_horseman, horseman[target_horseman].current_city);
             get_free_horse(target_horseman);
 
-            ReleaseMutex(mutex);
         }
         else break;
     }
@@ -392,10 +394,14 @@ void draw_info(){
     for (int i = 0; i < NOH; ++i) {
         if(!horseman[i].is_free){
             SetConsoleCursorPosition(handle_output, info_coord);
-            if(horseman[i].current_horse != NONE){
-                printf("%s (H%d): city - %d, horse - %d", horseman[i].horseman_name, horseman[i].horseman_id, horseman[i].current_city, horseman[i].current_horse);
+            if(horseman[i].current_city == horseman[i].destination_city) {
+                printf("%s (H%d): city - %d, Complete", horseman[i].horseman_name, horseman[i].horseman_id, horseman[i].current_city);
             }else{
-                printf("%s (H%d): city - %d, horse - %s", horseman[i].horseman_name, horseman[i].horseman_id, horseman[i].current_city, "waiting");
+                if(horseman[i].current_horse != NONE){
+                    printf("%s (H%d): city - %d, horse - %d", horseman[i].horseman_name, horseman[i].horseman_id, horseman[i].current_city, horseman[i].current_horse);
+                }else{
+                    printf("%s (H%d): city - %d, horse - %s", horseman[i].horseman_name, horseman[i].horseman_id, horseman[i].current_city, "waiting");
+                }
             }
             info_coord.Y++;
         }
