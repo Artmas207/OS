@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <windows.h>
 #include <process.h>
+#include <stdbool.h>
 
 #define NOC 11 //numbers of cities
 #define DHPC 5  //Default horses per city
