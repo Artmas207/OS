@@ -314,7 +314,7 @@ void draw_road(int city1, int city2){
         dir_y = -1;
     }
 
-    for(point_coord.X = city_1_coord.X + 1; point_coord.X < city_2_coord.X; point_coord.X++){
+    for(point_coord.X = (short)(city_1_coord.X + 1); point_coord.X < city_2_coord.X; point_coord.X++){
         SetConsoleCursorPosition(handle_output, point_coord);
         printf(".");
         error = error + delta_error;
